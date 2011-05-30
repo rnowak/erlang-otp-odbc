@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 2002-2010. All Rights Reserved.
+%% Copyright Ericsson AB 2002-2011. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -77,7 +77,8 @@ end_per_group(_GroupName, Config) ->
 %% variable, but should NOT alter/remove any existing entries.
 %%--------------------------------------------------------------------
 init_per_suite(Config) ->
-    application:start(odbc),  
+    %% application:start(odbc),
+    odbc:start(), % make sure init_per_suite fails if odbc is not built
     case catch odbc:connect(?RDBMS:connection_string(), 
 		      [{auto_commit, off}]) of
 	{ok, Ref} ->
