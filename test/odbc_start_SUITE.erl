@@ -1,7 +1,7 @@
 %%
 %% %CopyrightBegin%
 %%
-%% Copyright Ericsson AB 2007-2010. All Rights Reserved.
+%% Copyright Ericsson AB 2007-2011. All Rights Reserved.
 %%
 %% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
@@ -125,14 +125,16 @@ start(doc) ->
 start(suite) -> 
     [];
 start(Config) when is_list(Config) -> 
-    {error,odbc_not_started} = odbc:connect(?RDBMS:connection_string(), []),
+    PlatformOptions = odbc_test_lib:platform_options(),
+	{error,odbc_not_started} = odbc:connect(?RDBMS:connection_string(),
+					    PlatformOptions),
     odbc:start(),
-    case odbc:connect(?RDBMS:connection_string(), []) of
+    case odbc:connect(?RDBMS:connection_string(), PlatformOptions) of
 	{ok, Ref0} ->
 	    ok = odbc:disconnect(Ref0),
 	    odbc:stop(),
 	    {error,odbc_not_started} = 
-		odbc:connect(?RDBMS:connection_string(), []),
+		odbc:connect(?RDBMS:connection_string(), PlatformOptions),
 	    start_odbc(transient),
 	    start_odbc(permanent);
 	{error, odbc_not_started} ->
@@ -144,7 +146,7 @@ start(Config) when is_list(Config) ->
     
 start_odbc(Type) ->
     ok = odbc:start(Type),
-    case odbc:connect(?RDBMS:connection_string(), []) of
+    case odbc:connect(?RDBMS:connection_string(), odbc_test_lib:platform_options()) of
 	{ok, Ref} ->
 	    ok = odbc:disconnect(Ref),
 	    odbc:stop();
