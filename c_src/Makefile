@@ -20,7 +20,7 @@ LDFLAGS =
 
 # Platform-specific flags
 ifeq ($(UNAME_S),Darwin)
-    TARGET_FLAGS = -DUNIX
+    TARGET_FLAGS = -DUNIX -DHAVE_STRUCT_SOCKADDR_IN6_SIN6_ADDR
     # Try unixODBC first (Homebrew), fall back to iodbc
     ODBC_LIB := $(shell pkg-config --libs odbc 2>/dev/null || echo "-lodbc")
     ODBC_CFLAGS := $(shell pkg-config --cflags odbc 2>/dev/null)
@@ -35,7 +35,7 @@ ifeq ($(UNAME_S),Darwin)
         endif
     endif
 else ifeq ($(UNAME_S),Linux)
-    TARGET_FLAGS = -DUNIX
+    TARGET_FLAGS = -DUNIX -DHAVE_STRUCT_SOCKADDR_IN6_SIN6_ADDR
     ODBC_LIB := $(shell pkg-config --libs odbc 2>/dev/null || echo "-lodbc")
     ODBC_CFLAGS := $(shell pkg-config --cflags odbc 2>/dev/null)
 else

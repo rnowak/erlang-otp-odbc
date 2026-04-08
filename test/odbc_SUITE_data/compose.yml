@@ -1,0 +1,53 @@
+name: "odbc-test"
+services:
+  test-runner-pg:
+    build:
+      context: ../../
+      dockerfile: test/odbc_SUITE_data/Dockerfile.test-runner
+    depends_on:
+      postgres:
+        condition: service_started
+    profiles:
+      - pg
+    environment:
+      RUNNING_IN_DOCKER: 1
+      ODBC_TEST_PG_DRIVER: "{PostgreSQL Unicode}"
+      ODBC_TEST_PG_SERVER: postgres
+      ODBC_TEST_PG_PORT: 5432
+      ODBC_TEST_PG_USER: odbc_test
+      ODBC_TEST_PG_PASSWORD: odbc_test
+      ODBC_TEST_PG_DATABASE: odbc_test
+    command: rebar3 as test ct --verbose --readable false --suite test/odbc_SUITE --group postgres
+  test-runner-mssql:
+    platform: linux/amd64
+    build:
+      context: ../../
+      dockerfile: test/odbc_SUITE_data/Dockerfile.test-runner
+    depends_on:
+      sql-server:
+        condition: service_started
+    environment:
+      RUNNING_IN_DOCKER: 1
+      ODBC_TEST_MSSQL_DRIVER: "{ODBC Driver 18 for SQL Server}"
+      ODBC_TEST_MSSQL_SERVER: sql-server
+      ODBC_TEST_MSSQL_USER: SA
+      ODBC_TEST_MSSQL_PASSWORD: "OdbcTest_A1!"
+    profiles:
+      - mssql
+    command: rebar3 as test ct --verbose --readable false --suite test/odbc_SUITE --group mssql
+
+  sql-server:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      LC_ALL: C
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "OdbcTest_A1!"
+    profiles:
+      - mssql
+
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: odbc_test
+      POSTGRES_PASSWORD: odbc_test
+      POSTGRES_DB: odbc_test

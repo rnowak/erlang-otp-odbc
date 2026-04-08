@@ -18,3 +18,4 @@ priv/obj/
 
 # Legacy OTP
 CONF_INFO
+rebar3.crashdump

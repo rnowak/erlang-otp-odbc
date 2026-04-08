@@ -1,0 +1,41 @@
+name: CT Tests
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  ct:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build test images
+        working-directory: test/odbc_SUITE_data
+        run: docker compose --profile mssql --profile pg build
+
+      - name: Run PostgreSQL tests
+        working-directory: test/odbc_SUITE_data
+        run: docker compose --profile pg up --exit-code-from test-runner-pg
+
+      - name: Run MSSQL tests
+        working-directory: test/odbc_SUITE_data
+        run: docker compose --profile mssql up --exit-code-from test-runner-mssql
+
+      - name: Upload CT logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ct-logs
+          path: _build/test/logs/
+          retention-days: 7
+
+      - name: Cleanup
+        if: always()
+        working-directory: test/odbc_SUITE_data
+        run: docker compose --profile mssql --profile pg down -v

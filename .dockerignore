@@ -1,0 +1,10 @@
+# Ignore everything by default
+*
+
+# Include only what the test runner needs
+!rebar.config
+!rebar.lock
+!src/
+!c_src/
+!include/
+!test/
