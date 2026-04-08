@@ -1,3 +1,20 @@
-# odbc
+# rebar3
+_build/
+_checkouts/
+rebar.lock
+ebin/
 
+# C build artifacts
+c_src/*.o
+priv/bin/
+priv/obj/
+
+# OS
+.DS_Store
+
+# Editor
+*.swp
+*~
+
+# Legacy OTP
 CONF_INFO
