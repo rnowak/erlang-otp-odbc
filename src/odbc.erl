@@ -119,7 +119,7 @@ User's Guide.
                                  {sql_wvarchar, Size::integer()}|
                                  {sql_float, Precision::integer()} |
                                  {sql_wlongvarchar, Size::integer()} |
-                                 {sql_float, Precision::integer()} |
+                                 {sql_longvarbinary, Size::integer()} |
                                  sql_real | sql_double | sql_bit | atom().
 -doc """
 An explanation of what went wrong. For common errors there will be atom
@@ -1324,6 +1324,8 @@ fix_params({{sql_wvarchar, Max}, InOut, Values}) ->
 fix_params({{sql_wlongvarchar, Max}, InOut, Values}) ->
     NewValues = string_terminate(Values),
     {?USER_WLONGVARCHAR, Max, fix_inout(InOut), NewValues};
+fix_params({{sql_longvarbinary, Max}, InOut, Values}) ->
+    {?USER_LONGVARBINARY, Max, fix_inout(InOut), Values};
 fix_params({{sql_float, Precision}, InOut, Values}) ->
     {?USER_FLOAT, Precision, fix_inout(InOut), Values};
 fix_params({sql_real, InOut, Values}) ->

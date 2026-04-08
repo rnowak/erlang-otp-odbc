@@ -176,7 +176,7 @@ static db_result_msg encode_value_list_scroll(SQLSMALLINT num_of_columns,
                                               db_state *state);
 static db_result_msg encode_row_count(SQLINTEGER num_of_rows,
                                       db_state *state);
-static void encode_column_dyn(db_column column, int column_nr,
+static db_result_msg encode_column_dyn(db_column column, int column_nr,
                               db_state *state);
 static void encode_data_type(SQLSMALLINT sql_type, SQLINTEGER size,
                              SQLSMALLINT decimal_digits, db_state *state);
@@ -241,11 +241,24 @@ static param_array * bind_parameter_arrays(char *buffer, int *index,
                                            int cols,
                                            int num_param_values,
                                            db_state *state);
-static void * retrive_param_values(param_array *Param);
+static void * retrieve_param_values(param_array *Param);
 
-static db_column retrive_binary_data(db_column column, int column_nr,
-                                     db_state *state);
-static db_result_msg retrive_scrollable_cursor_support_info(db_state
+static Boolean get_long_data(db_column column,
+                              int column_nr,
+                              SQLSMALLINT target_type,
+                              char** result_buf,
+                              SQLLEN* result_len,
+                              int termination_bytes,
+                              db_state* state);
+
+static SQLRETURN get_data(int column_nr,
+                          SQLSMALLINT target_type,
+                          SQLPOINTER result_buf,
+                          SQLLEN buffer_len,
+                          SQLLEN *result_len,
+                          db_state* state);
+
+static db_result_msg retrieve_scrollable_cursor_support_info(db_state
                                                             *state);
 static int num_out_params(int num_of_params, param_array* params);
 /* ------------- Error handling functions --------------------------------*/
@@ -563,7 +576,7 @@ static db_result_msg db_connect(byte *args, db_state *state)
     }
     /* END */
 
-    msg = retrive_scrollable_cursor_support_info(state);
+    msg = retrieve_scrollable_cursor_support_info(state);
   
     return msg;
 }
@@ -1227,7 +1240,7 @@ static db_result_msg encode_out_params(db_state *state,
                 column.type.strlen_or_indptr == SQL_NULL_DATA) {
                 ei_x_encode_atom(&dynamic_buffer(state), "null");
             } else {
-                void* values = retrive_param_values(&column);
+                void* values = retrieve_param_values(&column);
                 switch(column.type.c) {
                 case SQL_C_TYPE_TIMESTAMP:
                   ts = (TIMESTAMP_STRUCT*) values;
@@ -1323,13 +1336,14 @@ static db_result_msg encode_column_name_list(SQLSMALLINT num_of_columns,
     SQLCHAR name[MAX_NAME];
     SQLSMALLINT name_len, sql_type, dec_digits, nullable;
     SQLULEN size;
+    SQLRETURN rc;
 
     msg = encode_empty_message();
     
     ei_x_encode_list_header(&dynamic_buffer(state), num_of_columns);
   
     for (i = 0; i < num_of_columns; ++i) {
-
+        columns(state)[i].buffer = NULL;
         if(!sql_success(SQLDescribeCol(statement_handle(state),
                                        (SQLSMALLINT)(i+1),
                                        name, sizeof(name), &name_len,
@@ -1343,38 +1357,43 @@ static db_result_msg encode_column_name_list(SQLSMALLINT num_of_columns,
         (columns(state)[i]).type.decimal_digits = dec_digits;
         (columns(state)[i]).type.sql = sql_type;
         (columns(state)[i]).type.col_size = size;
-      
+
         msg = map_sql_2_c_column(&columns(state)[i], state);
-        if (msg.length > 0) {
+        if (msg.length > 0)
             return msg; /* An error has occurred */
-        } else {
-            if (columns(state)[i].type.len > 0) {
+
+        if (columns(state)[i].type.len > 0) {
+            switch (columns(state)[i].type.c) {
+            case SQL_C_WCHAR:
+            case SQL_C_CHAR:
+            case SQL_C_BINARY:
+            case SQL_C_SLONG:
+            case SQL_C_DOUBLE:
+            case SQL_C_BIT:
+            case SQL_C_TYPE_TIMESTAMP:
+                // retrieved later by retrieve_long_data
+                break;
+            default:
                 columns(state)[i].buffer =
                     (char *)safe_malloc(columns(state)[i].type.len);
-        
-                if (columns(state)[i].type.c == SQL_C_BINARY) {
-                    /* retrieved later by retrive_binary_data */
-                } else {
-                    if(!sql_success(
-                        SQLBindCol
-                        (statement_handle(state),
-                         (SQLSMALLINT)(i+1),
-                         columns(state)[i].type.c,
-                         columns(state)[i].buffer,
-                         columns(state)[i].type.len,
-                         &columns(state)[i].type.strlen_or_indptr)))
-                        DO_EXIT(EXIT_BIND);
+                rc = SQLBindCol(statement_handle(state),
+                                (SQLSMALLINT)(i+1),
+                                columns(state)[i].type.c,
+                                columns(state)[i].buffer,
+                                columns(state)[i].type.len,
+                                &columns(state)[i].type.strlen_or_indptr);
+                if (!sql_success(rc)) {
+                    DO_EXIT(EXIT_BIND);
                 }
-                ei_x_encode_string_len(&dynamic_buffer(state),
-                                       (char *)name, name_len);
             }
-            else {
-                columns(state)[i].type.len = 0;
-                columns(state)[i].buffer = NULL;
-            }
-        }  
-    }
-    ei_x_encode_empty_list(&dynamic_buffer(state)); 
+            ei_x_encode_string_len(&dynamic_buffer(state), (char *)name, name_len);
+
+        } else {
+            columns(state)[i].type.len = 0;
+            columns(state)[i].buffer = NULL;
+        }
+    } // end of for loop
+    ei_x_encode_empty_list(&dynamic_buffer(state));
 
     return msg;
 }
@@ -1409,7 +1428,11 @@ static db_result_msg encode_value_list(SQLSMALLINT num_of_columns,
         }
     
         for (i = 0; i < num_of_columns; i++) {
-            encode_column_dyn(columns(state)[i], i, state);
+            msg = encode_column_dyn(columns(state)[i], i, state);
+            if (msg.length != 0) {
+                clean_state(state);
+                return msg;
+            }
         }
 
         if(!tuple_row(state)) {
@@ -1459,7 +1482,11 @@ static db_result_msg encode_value_list_scroll(SQLSMALLINT num_of_columns,
             ei_x_encode_list_header(&dynamic_buffer(state), num_of_columns);
         }
         for (i = 0; i < num_of_columns; i++) {
-            encode_column_dyn(columns(state)[i], i, state);
+            msg = encode_column_dyn(columns(state)[i], i, state);
+            if (msg.length != 0) {
+                clean_state(state);
+                return msg;
+            }
         }
         if(!tuple_row(state)) {
             ei_x_encode_empty_list(&dynamic_buffer(state));
@@ -1503,68 +1530,155 @@ static db_result_msg encode_row_count(SQLINTEGER num_of_rows,
     }
     return msg;
 }
- 
+
+static void encode_binary_or_string(byte bin_strings, char* bufferptr, int result_len, db_state* state) {
+    if (bufferptr) {
+        if (bin_strings) {
+            ei_x_encode_binary(&dynamic_buffer(state), bufferptr, result_len);
+        } else {
+            ei_x_encode_string_len(&dynamic_buffer(state), bufferptr, result_len);
+        }
+    } else {
+        ei_x_encode_atom(&dynamic_buffer(state), "null");
+    }
+}
+
 /* Description: Encodes the a column value into the "ei_x" - dynamic_buffer
-   held by the state variable */
-static void encode_column_dyn(db_column column, int column_nr,
+   held by the state variable. Returns an empty message on success, or an
+   error message if SQLGetData fails. */
+static db_result_msg encode_column_dyn(db_column column, int column_nr,
                               db_state *state)
 {
-    TIMESTAMP_STRUCT* ts;
-    if (column.type.len == 0 ||
-        column.type.strlen_or_indptr == SQL_NULL_DATA) {
+    db_result_msg msg;
+    diagnos diagnos;
+
+    msg = encode_empty_message();
+
+    if (column.type.len == 0 || column.type.strlen_or_indptr == SQL_NULL_DATA) {
         ei_x_encode_atom(&dynamic_buffer(state), "null");
     } else {
         switch(column.type.c) {
-        case SQL_C_TYPE_TIMESTAMP:
-            ts = (TIMESTAMP_STRUCT*)column.buffer;
+        case SQL_C_TYPE_TIMESTAMP: {
+            TIMESTAMP_STRUCT ts;
+            SQLLEN len = 0;
+            SQLRETURN rc;
+
+            rc = get_data(column_nr, SQL_C_TIMESTAMP, (SQLPOINTER)&ts, sizeof(ts), &len, state);
+            if (!sql_success(rc)) {
+                diagnos = get_diagnos(SQL_HANDLE_STMT, statement_handle(state), extended_errors(state));
+                return encode_error_message((char *)diagnos.error_msg, extended_error(state, diagnos.sqlState), diagnos.nativeError);
+            }
+
+            if (!(len > 0)) {
+                ei_x_encode_atom(&dynamic_buffer(state), "null");
+                break;
+            }
+
             ei_x_encode_tuple_header(&dynamic_buffer(state), 2);
             ei_x_encode_tuple_header(&dynamic_buffer(state), 3);
-            ei_x_encode_ulong(&dynamic_buffer(state), ts->year);
-            ei_x_encode_ulong(&dynamic_buffer(state), ts->month);
-            ei_x_encode_ulong(&dynamic_buffer(state), ts->day);
+            ei_x_encode_ulong(&dynamic_buffer(state), ts.year);
+            ei_x_encode_ulong(&dynamic_buffer(state), ts.month);
+            ei_x_encode_ulong(&dynamic_buffer(state), ts.day);
             ei_x_encode_tuple_header(&dynamic_buffer(state), 3);
-            ei_x_encode_ulong(&dynamic_buffer(state), ts->hour);
-            ei_x_encode_ulong(&dynamic_buffer(state), ts->minute);
-            ei_x_encode_ulong(&dynamic_buffer(state), ts->second);
+            ei_x_encode_ulong(&dynamic_buffer(state), ts.hour);
+            ei_x_encode_ulong(&dynamic_buffer(state), ts.minute);
+            ei_x_encode_ulong(&dynamic_buffer(state), ts.second);
             break;
-        case SQL_C_CHAR:
-                if binary_strings(state) {
-                         ei_x_encode_binary(&dynamic_buffer(state), 
-                                            column.buffer,column.type.strlen_or_indptr);
-                } else {
-                        ei_x_encode_string(&dynamic_buffer(state), column.buffer);
-                }
+        }
+        case SQL_C_CHAR: {
+            char *bufferptr = NULL;
+            SQLLEN result_len = 0;
+            const int termination_bytes = sizeof(char);
+            if (!get_long_data(column, column_nr, SQL_C_CHAR, &bufferptr, &result_len, termination_bytes, state)) {
+                diagnos = get_diagnos(SQL_HANDLE_STMT, statement_handle(state), extended_errors(state));
+                return encode_error_message((char *)diagnos.error_msg, extended_error(state, diagnos.sqlState), diagnos.nativeError);
+            }
+            encode_binary_or_string(binary_strings(state), bufferptr, result_len, state);
+            if (bufferptr)
+                free(bufferptr);
             break;
-        case SQL_C_WCHAR:
-            ei_x_encode_binary(&dynamic_buffer(state), 
-                               column.buffer,column.type.strlen_or_indptr);
+        }
+        case SQL_C_BINARY: {
+            char *bufferptr = NULL;
+            SQLLEN result_len = 0;
+            if (!get_long_data(column, column_nr, SQL_C_BINARY, &bufferptr, &result_len, 0, state)) {
+                diagnos = get_diagnos(SQL_HANDLE_STMT, statement_handle(state), extended_errors(state));
+                return encode_error_message((char *)diagnos.error_msg, extended_error(state, diagnos.sqlState), diagnos.nativeError);
+            }
+            encode_binary_or_string(binary_strings(state), bufferptr, result_len, state);
+            if (bufferptr)
+                free(bufferptr);
             break;
-        case SQL_C_SLONG:
-            ei_x_encode_long(&dynamic_buffer(state),
-                    *(SQLINTEGER*)column.buffer);
+        }
+        case SQL_C_WCHAR: {
+            char *bufferptr = NULL;
+            SQLLEN result_len = 0;
+            const int termination_bytes = sizeof(SQLWCHAR);
+            if (!get_long_data(column, column_nr, SQL_C_WCHAR, &bufferptr, &result_len, termination_bytes, state)) {
+                diagnos = get_diagnos(SQL_HANDLE_STMT, statement_handle(state), extended_errors(state));
+                return encode_error_message((char *)diagnos.error_msg, extended_error(state, diagnos.sqlState), diagnos.nativeError);
+            }
+            encode_binary_or_string(1, bufferptr, result_len, state);
+            if (bufferptr)
+                free(bufferptr);
             break;
-        case SQL_C_DOUBLE:
-            ei_x_encode_double(&dynamic_buffer(state),
-                               *(double*)column.buffer);
-            break;
-        case SQL_C_BIT:
-            ei_x_encode_atom(&dynamic_buffer(state),
-                             column.buffer[0]?"true":"false");
-            break;
-        case SQL_C_BINARY:		
-            column = retrive_binary_data(column, column_nr, state);
-            if binary_strings(state) {
-                    ei_x_encode_binary(&dynamic_buffer(state), 
-                                       column.buffer,column.type.strlen_or_indptr);
+        }
+        case SQL_C_SLONG: {
+            SQLINTEGER value = -1;
+            SQLLEN len = 0;
+            SQLRETURN rc;
+            rc = get_data(column_nr, SQL_C_SLONG, (SQLPOINTER)&value, sizeof(value), &len, state);
+            if (!sql_success(rc)) {
+                diagnos = get_diagnos(SQL_HANDLE_STMT, statement_handle(state), extended_errors(state));
+                return encode_error_message((char *)diagnos.error_msg, extended_error(state, diagnos.sqlState), diagnos.nativeError);
+            }
+            if (len > 0) {
+                ei_x_encode_long(&dynamic_buffer(state), value);
             } else {
-                    ei_x_encode_string(&dynamic_buffer(state), (void *)column.buffer);
+                ei_x_encode_atom(&dynamic_buffer(state), "null");
             }
             break;
-        default:
+        }
+        case SQL_C_DOUBLE: {
+            SQLDOUBLE value = -1;
+            SQLLEN len = 0;
+            SQLRETURN rc;
+            rc = get_data(column_nr, SQL_C_DOUBLE, (SQLPOINTER)&value, sizeof(value), &len, state);
+            if (!sql_success(rc)) {
+                diagnos = get_diagnos(SQL_HANDLE_STMT, statement_handle(state), extended_errors(state));
+                return encode_error_message((char *)diagnos.error_msg, extended_error(state, diagnos.sqlState), diagnos.nativeError);
+            }
+            if (len > 0) {
+                ei_x_encode_double(&dynamic_buffer(state), value);
+            } else {
+                ei_x_encode_atom(&dynamic_buffer(state), "null");
+            }
+            break;
+        }
+        case SQL_C_BIT: {
+            SQLINTEGER value = 0;
+            SQLLEN len = 0;
+            SQLRETURN rc;
+            rc = get_data(column_nr, SQL_C_TINYINT, (SQLPOINTER)&value, sizeof(value), &len, state);
+            if (!sql_success(rc)) {
+                diagnos = get_diagnos(SQL_HANDLE_STMT, statement_handle(state), extended_errors(state));
+                return encode_error_message((char *)diagnos.error_msg, extended_error(state, diagnos.sqlState), diagnos.nativeError);
+            }
+            if (len > 0) {
+                ei_x_encode_atom(&dynamic_buffer(state), value ? "true" : "false");
+            } else {
+                ei_x_encode_atom(&dynamic_buffer(state), "null");
+            }
+            break;
+        }
+        default: {
             ei_x_encode_atom(&dynamic_buffer(state), "error");
             break;
         }
-    } 
+        }
+    }
+
+    return msg;
 }
 
 static void encode_data_type(SQLSMALLINT sql_type, SQLINTEGER size,
@@ -1725,6 +1839,10 @@ static Boolean decode_params(db_state *state, char *buffer, int *index, param_ar
             }
             break;
     case SQL_C_WCHAR:
+            ei_decode_binary(buffer, index, &(param->values.string[param->offset]), &bin_size);
+            param->offset += param->type.len;
+            break;
+    case SQL_C_BINARY:
             ei_decode_binary(buffer, index, &(param->values.string[param->offset]), &bin_size);
             param->offset += param->type.len;
             break;
@@ -2146,7 +2264,7 @@ static void free_params(param_array **params, int cols)
             if((*params)[i].type.strlen_or_indptr_array != NULL){
                 free((*params)[i].type.strlen_or_indptr_array);
             }    
-            free(retrive_param_values(&((*params)[i])));
+            free(retrieve_param_values(&((*params)[i])));
         } 
         free(*params);
         *params = NULL;
@@ -2229,6 +2347,7 @@ static void init_driver(int erl_auto_commit_mode, int erl_trace_driver,
             DO_EXIT(EXIT_CONNECTION);
 }
 
+// The data from here is passed into SQLBindParameter function
 static void init_param_column(param_array *params, char *buffer, int *index,
                               int num_param_values, db_state* state)
 {
@@ -2329,7 +2448,20 @@ static void init_param_column(param_array *params, char *buffer, int *index,
             = alloc_strlen_indptr(num_param_values, SQL_NTS);
         params->values.string =
           (byte *)safe_malloc(num_param_values * sizeof(byte) * params->type.len);
-        
+
+        break;
+    // also SQL_BLOB
+    case USER_LONGVARBINARY:
+        // We need to properly setup and initialize StrLen_or_IndPtr argument.
+        // For binary buffers, the value of StrLen_or_IndPtr must be the length of the data held in the buffer.
+        ei_decode_long(buffer, index, &length);
+        params->type.c = SQL_C_BINARY;
+        params->type.sql = SQL_LONGVARBINARY;
+        params->type.col_size = length;
+        params->type.len = length;
+        params->type.strlen_or_indptr_array
+            = alloc_strlen_indptr(num_param_values, length);
+        params->values.string = (byte *)safe_malloc(num_param_values * length);
         break;
     case USER_TIMESTAMP:
       params->type.sql = SQL_TYPE_TIMESTAMP;
@@ -2445,14 +2577,10 @@ static void map_dec_num_2_c_column(col_type *type, int precision, int scale)
     type -> col_size = (SQLINTEGER)precision;
     type -> decimal_digits = (SQLSMALLINT)scale;
 
-    if(precision >= 0 && precision <= 4 && scale == 0) {
+    if (precision <= 9 && scale == 0) {
         type->len = sizeof(SQLINTEGER);
         type->c = SQL_C_SLONG;
-    } else if(precision >= 5 && precision <= 9 && scale == 0) {
-        type->len = sizeof(SQLINTEGER);
-        type->c = SQL_C_SLONG;
-    }  else if((precision >= 10 && precision <= 15 && scale == 0)
-               || (precision <= 15 && scale > 0)) {
+    }  else if(precision <= 15) {
         type->len = sizeof(double);
         type->c = SQL_C_DOUBLE;
     } else {
@@ -2579,11 +2707,11 @@ static param_array * bind_parameter_arrays(char *buffer, int *index,
             if(!decode_params(state, buffer, index, &params, i, j, num_param_values)) {
                 /* An input parameter was not of the expected type */  
                 free_params(&params, i);
-                return params;
+                return NULL;
             }
         }
 
-        Values = retrive_param_values(&params[i]); 
+        Values = retrieve_param_values(&params[i]); 
 
         if(!sql_success(
             SQLBindParameter(statement_handle(state), i + 1,
@@ -2601,12 +2729,13 @@ static param_array * bind_parameter_arrays(char *buffer, int *index,
     return params;
 }
  
-static void * retrive_param_values(param_array *Param)
+static void * retrieve_param_values(param_array *Param)
 {
     switch(Param->type.c) {
     case SQL_C_CHAR:
     case SQL_C_WCHAR:
     case SQL_C_TYPE_TIMESTAMP:
+    case SQL_C_BINARY:
         return (void *)Param->values.string;
     case SQL_C_SLONG:
         return (void *)Param->values.integer;
@@ -2619,53 +2748,8 @@ static void * retrive_param_values(param_array *Param)
     }
 }
 
-/* Description: More than one call to SQLGetData may be required to retrieve
-   data from a single column with  binary data. SQLGetData then returns
-   SQL_SUCCESS_WITH_INFO nd the SQLSTATE will have the value 01004 (Data
-   truncated). The application can then use the same column number to
-   retrieve subsequent parts of the data until SQLGetData returns
-   SQL_SUCCESS, indicating that all data for the column has been retrieved.
-*/
-
-static db_column retrive_binary_data(db_column column, int column_nr,
-                                     db_state *state)
-{ 
-    char *outputptr;
-    int blocklen, outputlen, result;
-    diagnos diagnos;
-  
-    blocklen = column.type.len;
-    outputptr = column.buffer;
-    result = SQLGetData(statement_handle(state), (SQLSMALLINT)(column_nr+1),
-                        SQL_C_CHAR, outputptr,
-                        blocklen, &column.type.strlen_or_indptr);
-
-    while (result == SQL_SUCCESS_WITH_INFO) {
-
-        diagnos = get_diagnos(SQL_HANDLE_STMT, statement_handle(state), extended_errors(state));
-    
-        if(strcmp((char *)diagnos.sqlState, TRUNCATED) == 0) {
-            outputlen = column.type.len - 1;
-            column.type.len = outputlen + blocklen;
-            column.buffer =
-                safe_realloc((void *)column.buffer, column.type.len);
-            outputptr = column.buffer + outputlen;
-            result = SQLGetData(statement_handle(state),
-                                (SQLSMALLINT)(column_nr+1), SQL_C_CHAR,
-                                outputptr, blocklen,
-                                &column.type.strlen_or_indptr);
-        }
-    }
-  
-    if (result == SQL_SUCCESS) {
-        return column;
-    } else {
-        DO_EXIT(EXIT_BIN); 
-    }
-}
-
 /* Description: Returns information about support for scrollable cursors */ 
-static db_result_msg retrive_scrollable_cursor_support_info(db_state *state)
+static db_result_msg retrieve_scrollable_cursor_support_info(db_state *state)
 {
     db_result_msg msg;
     SQLUINTEGER supportMask;
@@ -2811,4 +2895,90 @@ static void str_tolower(char *str, int len)
         for(i = 0; i <= len; i++) {
                 str[i] = tolower(str[i]);
         }
+}
+
+// result_buf: callee allocates, caller frees
+static Boolean get_long_data(db_column column,
+                       int column_nr,
+                       SQLSMALLINT target_type,
+                       char** result_buf,
+                       SQLLEN* result_len,
+                       int termination_bytes,
+                       db_state* state) {
+    SQLRETURN rc;
+    const int chunk_bytes = LONG_DATA_CHUNK_SIZE;
+    const int chunk_term_bytes = chunk_bytes + termination_bytes;
+    int buff_bytes;
+    int offset_bytes = 0;
+    SQLLEN byte_len_or_ind = 0;
+    int got_bytes = 0;
+
+    /* Use column size hint when available and smaller than chunk size */
+    if (column.type.col_size > 0 && column.type.col_size < LONG_DATA_CHUNK_SIZE) {
+        buff_bytes = (int)column.type.col_size + termination_bytes;
+    } else {
+        buff_bytes = chunk_term_bytes;
+    }
+
+    char* bufferptr = (void*) safe_malloc(buff_bytes);
+
+    do {
+        if ((offset_bytes + chunk_bytes) > buff_bytes) {
+            buff_bytes += chunk_bytes;
+            bufferptr = safe_realloc((void *) bufferptr, buff_bytes);
+        }
+
+        byte_len_or_ind = 0;
+        rc = SQLGetData(statement_handle(state),
+                        (SQLSMALLINT)(column_nr + 1),
+                        target_type,
+                        bufferptr + offset_bytes,
+                        chunk_term_bytes,
+                        &byte_len_or_ind);
+        if (byte_len_or_ind == SQL_NULL_DATA) {
+            free(bufferptr);
+            *result_buf = NULL;
+            *result_len = 0;
+            return TRUE;
+        }
+
+        if (byte_len_or_ind > chunk_bytes || byte_len_or_ind == SQL_NO_TOTAL) {
+            got_bytes = chunk_bytes;
+        } else {
+            got_bytes = byte_len_or_ind;
+        }
+
+        offset_bytes += got_bytes;
+
+    } while (SQL_SUCCESS_WITH_INFO == rc);
+
+    if (SQL_SUCCESS != rc) {
+        free(bufferptr);
+        *result_buf = NULL;
+        *result_len = 0;
+        return FALSE;
+    }
+
+    *result_len = offset_bytes;
+    *result_buf = bufferptr;
+    return TRUE;
+}
+
+static SQLRETURN get_data(int column_nr,
+              SQLSMALLINT target_type,
+              SQLPOINTER result_buf,
+              SQLLEN buffer_len,
+              SQLLEN* result_len,
+              db_state* state) {
+
+    SQLRETURN rc;
+
+    rc = SQLGetData(statement_handle(state), 
+                    (SQLSMALLINT)(column_nr+1),
+                    target_type, 
+                    result_buf,
+                    buffer_len,
+                    result_len);
+
+    return rc;
 }

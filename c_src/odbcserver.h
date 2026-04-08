@@ -37,6 +37,7 @@
 #define WAIT_FOR_NEW_MSG 0
 #define NEW_MSG_ARRIVED  1
 #define DEC_NUM_LENGTH 50
+#define LONG_DATA_CHUNK_SIZE 8192
 
 /* 0 in this case (SQL_ATTR_CONNECTION_TIMEOUT) corresponds to erlang
    infinity. Erlang will handle all timeouts so we do not want any in the
@@ -119,6 +120,7 @@
 #define USER_WVARCHAR 13
 #define USER_TIMESTAMP 14
 #define USER_WLONGVARCHAR 15
+#define USER_LONGVARBINARY 16
 
 /*------------------------   TYPDEFS  ----------------------------------*/
 
