@@ -8,3 +8,8 @@
 !c_src/
 !include/
 !test/
+
+# Exclude build artifacts that leak from host
+c_src/*.o
+priv/
+_build/

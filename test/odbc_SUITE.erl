@@ -337,12 +337,14 @@ select_very_long_string(Config) ->
 %% -- Binary data tests (SQL_C_BINARY / sql_longvarbinary) --
 
 select_binary(Config) ->
+    require_feature(native_binary, Config),
     Q = sql(binary_literal, 4, Config),
     Ret = query(Q, Config),
     {selected, _Cols, [[Val]]} = Ret,
     ?assertEqual(4, byte_size(Val)).
 
 select_large_binary(Config) ->
+    require_feature(native_binary, Config),
     %% Binary data larger than LONG_DATA_CHUNK_SIZE (8192 bytes).
     Q = sql(large_binary, 16000, Config),
     Ret = query(Q, Config),
@@ -350,6 +352,7 @@ select_large_binary(Config) ->
     ?assertEqual(16000, byte_size(Val)).
 
 param_query_binary(Config) ->
+    require_feature(native_binary, Config),
     Conn = ?config(conn, Config),
     Blob = crypto:strong_rand_bytes(256),
     Q = sql(param_binary, Config),
@@ -448,6 +451,11 @@ require_feature(multiple_result_sets, Config) ->
     case db(Config) of
         mssql -> ok;
         _ -> throw({skip, "Not supported by this database"})
+    end;
+require_feature(native_binary, Config) ->
+    case db(Config) of
+        mssql -> ok;
+        _ -> throw({skip, "Native binary type not supported by this driver"})
     end.
 
 %% Cast a string literal to text type
@@ -508,7 +516,9 @@ sql(large_binary, Size, Config) ->
         mssql ->
             "select crypt_gen_random(" ++ SizeStr ++ ")";
         postgres ->
-            "select gen_random_bytes(" ++ SizeStr ++ ")"
+            %% Build a deterministic bytea of the desired size using
+            %% repeat + decode (no pgcrypto extension required).
+            "select decode(repeat('AB', " ++ SizeStr ++ "), 'hex')"
     end.
 
 %% --- sql/2: helpers that take only Config ---
