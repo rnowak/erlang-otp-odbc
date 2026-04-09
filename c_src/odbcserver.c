@@ -1606,7 +1606,8 @@ static db_result_msg encode_column_dyn(db_column column, int column_nr,
                 diagnos = get_diagnos(SQL_HANDLE_STMT, statement_handle(state), extended_errors(state));
                 return encode_error_message((char *)diagnos.error_msg, extended_error(state, diagnos.sqlState), diagnos.nativeError);
             }
-            encode_binary_or_string(binary_strings(state), bufferptr, result_len, state);
+            /* Binary data is always returned as an Erlang binary */
+            encode_binary_or_string(1, bufferptr, result_len, state);
             if (bufferptr)
                 free(bufferptr);
             break;
@@ -2601,15 +2602,20 @@ static db_result_msg map_sql_2_c_column(db_column* column, db_state *state)
     switch(column -> type.sql) {
     case SQL_CHAR:
     case SQL_VARCHAR:
-    case SQL_BINARY:
     case SQL_LONGVARCHAR:
-    case SQL_VARBINARY:
-    case SQL_LONGVARBINARY:
         column -> type.len = (column -> type.col_size) +
             /* Make place for NULL termination */
             sizeof(byte);
         column -> type.c = SQL_C_CHAR;
         column -> type.strlen_or_indptr = SQL_NTS;
+        break;
+    case SQL_BINARY:
+    case SQL_VARBINARY:
+    case SQL_LONGVARBINARY:
+        column -> type.len = (column -> type.col_size) +
+            sizeof(byte);
+        column -> type.c = SQL_C_BINARY;
+        column -> type.strlen_or_indptr = 0;
         break;
     case SQL_WCHAR:
     case SQL_WVARCHAR:

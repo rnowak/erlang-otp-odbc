@@ -181,7 +181,8 @@ init_per_group(postgres, Config) ->
                       ";Port=" ++ Port ++
                       ";Database=" ++ Database ++
                       ";Uid=" ++ User ++
-                      ";Pwd=" ++ Password,
+                      ";Pwd=" ++ Password ++
+                      ";ByteaAsLongVarBinary=1",
             case await_connection(ConnStr) of
                 ok ->
                     [{connstr, ConnStr}, {db_type, postgres} | Config];
@@ -329,7 +330,9 @@ select_mixed_nulls(Config) ->
 select_very_long_string(Config) ->
     %% 20000 bytes — larger than LONG_DATA_CHUNK_SIZE (8192), forces
     %% multiple SQLGetData round-trips.
-    Q = sql(repeat_string, "X", "Y", 19998, "Z", Config),
+    %% Note: MSSQL replicate() returns varchar(8000) unless cast to
+    %% varchar(max), so we use the varchar_max helper.
+    Q = sql(varchar_max, "X", "Y", 19998, "Z", Config),
     Ret = query(Q, Config),
     Expected = iolist_to_binary(["X", lists:duplicate(19998, $Y), "Z"]),
     ?assertRows([[Expected]], Ret).
@@ -452,11 +455,8 @@ require_feature(multiple_result_sets, Config) ->
         mssql -> ok;
         _ -> throw({skip, "Not supported by this database"})
     end;
-require_feature(native_binary, Config) ->
-    case db(Config) of
-        mssql -> ok;
-        _ -> throw({skip, "Native binary type not supported by this driver"})
-    end.
+require_feature(native_binary, _Config) ->
+    ok.
 
 %% Cast a string literal to text type
 sql(text_literal, Str, Config) ->
@@ -514,7 +514,9 @@ sql(large_binary, Size, Config) ->
     SizeStr = integer_to_list(Size),
     case db(Config) of
         mssql ->
-            "select crypt_gen_random(" ++ SizeStr ++ ")";
+            %% crypt_gen_random max is 8000; use replicate on a varbinary(max)
+            %% cast to produce arbitrary-length binary data.
+            "select cast(replicate(cast(0xAB as varbinary(max)), " ++ SizeStr ++ ") as varbinary(max))";
         postgres ->
             %% Build a deterministic bytea of the desired size using
             %% repeat + decode (no pgcrypto extension required).
@@ -591,7 +593,9 @@ sql(varchar_max, Prefix, Char, N, Suffix, Config) ->
     Count = integer_to_list(N),
     case db(Config) of
         mssql ->
-            "select cast('" ++ Prefix ++ "'+replicate('" ++ Char ++ "', " ++ Count ++ ")+'" ++ Suffix ++ "' as varchar(max))";
+            %% replicate() with a varchar literal caps at 8000 chars;
+            %% casting the argument to varchar(max) removes the limit.
+            "select '" ++ Prefix ++ "'+replicate(cast('" ++ Char ++ "' as varchar(max)), " ++ Count ++ ")+'" ++ Suffix ++ "'";
         postgres ->
             "select cast('" ++ Prefix ++ "' || repeat('" ++ Char ++ "', " ++ Count ++ ") || '" ++ Suffix ++ "' as text)"
     end.
