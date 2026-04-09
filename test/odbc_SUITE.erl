@@ -25,8 +25,18 @@
     select_cast_varchar/1,
     select_multiple_result_sets/1,
     select_multiple_result_sets_mixed/1,
+    select_null_integer/1,
+    select_null_string/1,
+    select_null_boolean/1,
+    select_null_datetime/1,
+    select_null_float/1,
+    select_mixed_nulls/1,
+    select_very_long_string/1,
+    select_binary/1,
+    select_large_binary/1,
     param_query_integer/1,
     param_query_string/1,
+    param_query_binary/1,
     param_query_multiple_result_sets/1
 ]).
 
@@ -82,8 +92,18 @@ shared_cases() ->
         select_cast_varchar,
         select_multiple_result_sets,
         select_multiple_result_sets_mixed,
+        select_null_integer,
+        select_null_string,
+        select_null_boolean,
+        select_null_datetime,
+        select_null_float,
+        select_mixed_nulls,
+        select_very_long_string,
+        select_binary,
+        select_large_binary,
         param_query_integer,
         param_query_string,
+        param_query_binary,
         param_query_multiple_result_sets
     ].
 
@@ -273,6 +293,69 @@ param_query_multiple_result_sets(Config) ->
         [{sql_integer, [5]}, {sql_integer, [7]}]),
     ?assertRows([[5]], Ret).
 
+%% -- NULL handling tests (regression for uninitialized strlen_or_indptr) --
+
+select_null_integer(Config) ->
+    Ret = query(sql(cast_null, "integer", Config), Config),
+    ?assertRows([[null]], Ret).
+
+select_null_string(Config) ->
+    Ret = query(sql(cast_null, "text", Config), Config),
+    ?assertRows([[null]], Ret).
+
+select_null_boolean(Config) ->
+    Ret = query(sql(cast_null, "boolean", Config), Config),
+    ?assertRows([[null]], Ret).
+
+select_null_datetime(Config) ->
+    Ret = query(sql(cast_null, "datetime", Config), Config),
+    ?assertRows([[null]], Ret).
+
+select_null_float(Config) ->
+    Ret = query(sql(cast_null, "float", Config), Config),
+    ?assertRows([[null]], Ret).
+
+select_mixed_nulls(Config) ->
+    %% Mix of NULL and non-NULL values in a single row across multiple
+    %% unbound column types.  Exercises the strlen_or_indptr initialisation
+    %% because each column goes through encode_column_dyn independently.
+    Q = sql(mixed_nulls, Config),
+    Ret = query(Q, Config),
+    Expected = sql(mixed_nulls_expected, Config),
+    ?assertRows([Expected], Ret).
+
+%% -- Multi-chunk retrieval (regression for get_long_data / SQLLEN) --
+
+select_very_long_string(Config) ->
+    %% 20000 bytes — larger than LONG_DATA_CHUNK_SIZE (8192), forces
+    %% multiple SQLGetData round-trips.
+    Q = sql(repeat_string, "X", "Y", 19998, "Z", Config),
+    Ret = query(Q, Config),
+    Expected = iolist_to_binary(["X", lists:duplicate(19998, $Y), "Z"]),
+    ?assertRows([[Expected]], Ret).
+
+%% -- Binary data tests (SQL_C_BINARY / sql_longvarbinary) --
+
+select_binary(Config) ->
+    Q = sql(binary_literal, 4, Config),
+    Ret = query(Q, Config),
+    {selected, _Cols, [[Val]]} = Ret,
+    ?assertEqual(4, byte_size(Val)).
+
+select_large_binary(Config) ->
+    %% Binary data larger than LONG_DATA_CHUNK_SIZE (8192 bytes).
+    Q = sql(large_binary, 16000, Config),
+    Ret = query(Q, Config),
+    {selected, _Cols, [[Val]]} = Ret,
+    ?assertEqual(16000, byte_size(Val)).
+
+param_query_binary(Config) ->
+    Conn = ?config(conn, Config),
+    Blob = crypto:strong_rand_bytes(256),
+    Q = sql(param_binary, Config),
+    Ret = odbc:param_query(Conn, Q, [{{sql_longvarbinary, 256}, [Blob]}]),
+    ?assertRows([[Blob]], Ret).
+
 %% ------------------------------------------------------------------
 %% MSSQL-specific test cases
 %% ------------------------------------------------------------------
@@ -386,7 +469,49 @@ sql(timestamp_literal, Value, Config) ->
     case db(Config) of
         mssql    -> "select cast('" ++ Value ++ "' as datetime)";
         postgres -> "select '" ++ Value ++ "'::timestamp"
+    end;
+
+%% Cast NULL to a specific type
+sql(cast_null, "boolean", Config) ->
+    case db(Config) of
+        mssql    -> "select cast(null as bit)";
+        postgres -> "select null::boolean"
+    end;
+sql(cast_null, "datetime", Config) ->
+    case db(Config) of
+        mssql    -> "select cast(null as datetime)";
+        postgres -> "select null::timestamp"
+    end;
+sql(cast_null, "float", Config) ->
+    case db(Config) of
+        mssql    -> "select cast(null as float)";
+        postgres -> "select null::double precision"
+    end;
+sql(cast_null, Type, Config) ->
+    case db(Config) of
+        mssql    -> "select cast(null as " ++ Type ++ ")";
+        postgres -> "select null::" ++ Type
+    end;
+
+%% Small binary literal
+sql(binary_literal, Size, Config) ->
+    Hex = binary_to_hex(crypto:strong_rand_bytes(Size)),
+    case db(Config) of
+        mssql    -> "select 0x" ++ Hex;
+        postgres -> "select E'\\\\x" ++ Hex ++ "'::bytea"
+    end;
+
+%% Large binary (bigger than LONG_DATA_CHUNK_SIZE)
+sql(large_binary, Size, Config) ->
+    SizeStr = integer_to_list(Size),
+    case db(Config) of
+        mssql ->
+            "select crypt_gen_random(" ++ SizeStr ++ ")";
+        postgres ->
+            "select gen_random_bytes(" ++ SizeStr ++ ")"
     end.
+
+%% --- sql/2: helpers that take only Config ---
 
 %% Boolean pair: select true, false
 sql(boolean_pair, Config) ->
@@ -413,7 +538,33 @@ sql(swedish_characters, Config) ->
             %% PostgreSQL returns UTF-8 encoded bytes
             {"select E'\\xC3\\xA5\\xC3\\xA4\\xC3\\xB6\\xC3\\x85\\xC3\\x84\\xC3\\x96'::text",
              unicode:characters_to_binary([229, 228, 246, 197, 196, 214])}
+    end;
+
+%% param_query that accepts a binary parameter
+sql(param_binary, Config) ->
+    case db(Config) of
+        mssql    -> "select ?";
+        postgres -> "select ?::bytea"
+    end;
+
+%% Mixed NULL and non-NULL values in a single row
+sql(mixed_nulls, Config) ->
+    case db(Config) of
+        mssql ->
+            "select 42, cast(null as varchar(64)), cast(1 as bit), "
+            "cast(null as datetime), 3.14, cast(null as int)";
+        postgres ->
+            "select 42, null::text, true, "
+            "null::timestamp, 3.14::double precision, null::integer"
+    end;
+
+sql(mixed_nulls_expected, Config) ->
+    case db(Config) of
+        mssql    -> [42, null, true, null, 3.14, null];
+        postgres -> [42, null, <<"1">>, null, 3.14, null]
     end.
+
+%% --- sql/6: long string builders ---
 
 %% Build a long string: Prefix + repeated Char + Suffix
 sql(repeat_string, Prefix, Char, N, Suffix, Config) ->
@@ -434,3 +585,10 @@ sql(varchar_max, Prefix, Char, N, Suffix, Config) ->
         postgres ->
             "select cast('" ++ Prefix ++ "' || repeat('" ++ Char ++ "', " ++ Count ++ ") || '" ++ Suffix ++ "' as text)"
     end.
+
+%% ------------------------------------------------------------------
+%% Internal helpers
+%% ------------------------------------------------------------------
+
+binary_to_hex(Bin) ->
+    lists:flatten([io_lib:format("~2.16.0B", [B]) || <<B>> <= Bin]).
