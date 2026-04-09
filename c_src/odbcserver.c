@@ -1532,7 +1532,7 @@ static db_result_msg encode_row_count(SQLINTEGER num_of_rows,
     return msg;
 }
 
-static void encode_binary_or_string(byte bin_strings, char* bufferptr, int result_len, db_state* state) {
+static void encode_binary_or_string(byte bin_strings, char* bufferptr, SQLLEN result_len, db_state* state) {
     if (bufferptr) {
         if (bin_strings) {
             ei_x_encode_binary(&dynamic_buffer(state), bufferptr, result_len);
