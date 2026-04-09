@@ -1657,10 +1657,10 @@ static db_result_msg encode_column_dyn(db_column column, int column_nr,
             break;
         }
         case SQL_C_BIT: {
-            SQLINTEGER value = 0;
+            SQLCHAR value = 0;
             SQLLEN len = 0;
             SQLRETURN rc;
-            rc = get_data(column_nr, SQL_C_TINYINT, (SQLPOINTER)&value, sizeof(value), &len, state);
+            rc = get_data(column_nr, SQL_C_BIT, (SQLPOINTER)&value, sizeof(value), &len, state);
             if (!sql_success(rc)) {
                 diagnos = get_diagnos(SQL_HANDLE_STMT, statement_handle(state), extended_errors(state));
                 return encode_error_message((char *)diagnos.error_msg, extended_error(state, diagnos.sqlState), diagnos.nativeError);
