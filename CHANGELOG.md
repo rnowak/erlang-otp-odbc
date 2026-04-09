@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.17.1]
+
+### Fixed
+
+- Initialize `strlen_or_indptr` for unbound columns in `alloc_column_buffer`,
+  preventing sporadic null returns for non-null values when the uninitialized
+  memory happened to equal `SQL_NULL_DATA`
+- Use `SQLCHAR` with `SQL_C_BIT` instead of `SQLINTEGER` with `SQL_C_TINYINT`
+  for boolean column retrieval, matching the ODBC spec and fixing portability
+  issues on big-endian architectures
+- Widen `encode_binary_or_string` result length parameter from `int` to `SQLLEN`
+  to avoid silent truncation of values larger than 2 GB
+
+### Added
+
+- Regression tests for NULL handling across all column types
+- Tests for multi-chunk binary retrieval and `sql_longvarbinary` param queries
+
 ## [2.17.0]
 
 ### Added
