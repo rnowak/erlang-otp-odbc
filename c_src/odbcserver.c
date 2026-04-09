@@ -1344,6 +1344,7 @@ static db_result_msg encode_column_name_list(SQLSMALLINT num_of_columns,
   
     for (i = 0; i < num_of_columns; ++i) {
         columns(state)[i].buffer = NULL;
+        columns(state)[i].type.strlen_or_indptr = 0;
         if(!sql_success(SQLDescribeCol(statement_handle(state),
                                        (SQLSMALLINT)(i+1),
                                        name, sizeof(name), &name_len,
