@@ -17,11 +17,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   issues on big-endian architectures
 - Widen `encode_binary_or_string` result length parameter from `int` to `SQLLEN`
   to avoid silent truncation of values larger than 2 GB
+- Map `SQL_BINARY`, `SQL_VARBINARY`, and `SQL_LONGVARBINARY` column types to
+  `SQL_C_BINARY` for retrieval, returning raw bytes instead of hex strings.
+  Binary data is now always returned as an Erlang binary regardless of the
+  `binary_strings` connection option.
 
 ### Added
 
 - Regression tests for NULL handling across all column types
 - Tests for multi-chunk binary retrieval and `sql_longvarbinary` param queries
+- PostgreSQL connections now use `ByteaAsLongVarBinary=1`, enabling native
+  binary retrieval for `bytea` columns
 
 ## [2.17.0] - 2026-04-09
 
