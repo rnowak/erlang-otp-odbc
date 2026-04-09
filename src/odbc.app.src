@@ -6,7 +6,7 @@
 %%
 %% %CopyrightEnd%
 {application, odbc,
- [{pkg_name, "erlang-otp-odbc"},
+ [{pkg_name, "erlang_otp_odbc"},
   {exclude_paths, ["priv/bin"]},
   {description, "Erlang ODBC application"},
   {vsn, "2.17.1"},
