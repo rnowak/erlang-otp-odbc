@@ -36,8 +36,9 @@ jobs:
           fi
 
           RELEASE_DATA=$(jq -n \
+            --arg name "Erlang/OTP ODBC ${RELEASE_VERSION}" \
             --arg body "$RELEASE_BODY" \
-            '{"body": $body}') || exit 1
+            '{"name": $name, "body": $body}') || exit 1
 
           curl -L \
             --fail-with-body \
