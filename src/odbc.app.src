@@ -6,7 +6,8 @@
 %%
 %% %CopyrightEnd%
 {application, odbc,
- [{description, "Erlang ODBC application"},
+ [{pkg_name, "erlang-otp-odbc"},
+  {description, "Erlang ODBC application"},
   {vsn, "2.17.1"},
   {modules, []},
   {registered, [
@@ -16,5 +17,5 @@
   {env,[]},
   {mod, {odbc_app, []}},
   {licenses, ["Apache-2.0"]},
-  {links, []}]}.
+  {links, [{"GitHub", "https://github.com/rnowak/erlang-otp-odbc"}]}]}.
 
