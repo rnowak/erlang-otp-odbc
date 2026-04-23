@@ -9,7 +9,7 @@
  [{pkg_name, "erlang_otp_odbc"},
   {exclude_paths, ["priv/bin"]},
   {description, "Erlang ODBC application"},
-  {vsn, "2.17.1"},
+  {vsn, "2.18.0"},
   {modules, []},
   {registered, [
 		odbc_sup

@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.18.0] - 2026-04-23
+
+### Added
+
+- Support for `sql_longvarchar` in parameterized queries (`param_query/3,4`).
+  The new `{sql_longvarchar, Size}` type allows inserting and querying
+  `SQL_LONGVARCHAR` / `TEXT` columns via `param_query`, complementing the
+  existing read-only support. The implementation follows the same pattern as
+  `sql_varchar` on both the C and Erlang sides.
+- End-to-end tests for `sql_longvarchar` param queries covering single value,
+  multi-row insert, NULL handling, and large strings (>8000 bytes), verified
+  against both PostgreSQL and MSSQL.
+
 ## [2.17.1] - 2026-04-09
 
 ### Fixed

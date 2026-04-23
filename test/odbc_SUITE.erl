@@ -36,6 +36,10 @@
     select_large_binary/1,
     param_query_integer/1,
     param_query_string/1,
+    param_query_longvarchar/1,
+    param_query_longvarchar_multiple/1,
+    param_query_longvarchar_null/1,
+    param_query_longvarchar_long/1,
     param_query_binary/1,
     param_query_multiple_result_sets/1
 ]).
@@ -103,6 +107,10 @@ shared_cases() ->
         select_large_binary,
         param_query_integer,
         param_query_string,
+        param_query_longvarchar,
+        param_query_longvarchar_multiple,
+        param_query_longvarchar_null,
+        param_query_longvarchar_long,
         param_query_binary,
         param_query_multiple_result_sets
     ].
@@ -284,6 +292,54 @@ param_query_string(Config) ->
     Q = sql(param_cast, "text", Config),
     Ret = odbc:param_query(Conn, Q, [{{sql_varchar, 128}, [<<"hello">>]}]),
     ?assertRows([[<<"hello">>]], Ret).
+
+param_query_longvarchar(Config) ->
+    Conn = ?config(conn, Config),
+    Q = sql(param_cast, "text", Config),
+    Ret = odbc:param_query(Conn, Q, [{{sql_longvarchar, 128}, [<<"hello">>]}]),
+    ?assertRows([[<<"hello">>]], Ret).
+
+param_query_longvarchar_multiple(Config) ->
+    Conn = ?config(conn, Config),
+    Table = "longvarchar_multi_" ++ integer_to_list(erlang:unique_integer([positive])),
+    CreateQ = sql(create_text_table, Table, Config),
+    {updated, _} = odbc:sql_query(Conn, CreateQ),
+    InsertQ = "INSERT INTO " ++ Table ++ "(field) VALUES (?)",
+    Data = [<<"hello">>, <<"world">>, <<"foo bar">>],
+    {updated, _} = odbc:param_query(Conn, InsertQ,
+        [{{sql_longvarchar, 128}, Data}]),
+    Ret = odbc:sql_query(Conn, "SELECT field FROM " ++ Table ++ " ORDER BY field"),
+    {selected, _, Rows} = Ret,
+    ResultStrings = [Val || [Val] <- Rows],
+    ?assertEqual([<<"foo bar">>, <<"hello">>, <<"world">>], ResultStrings),
+    odbc:sql_query(Conn, "DROP TABLE " ++ Table).
+
+param_query_longvarchar_null(Config) ->
+    Conn = ?config(conn, Config),
+    Table = "longvarchar_null_" ++ integer_to_list(erlang:unique_integer([positive])),
+    CreateQ = sql(create_text_table, Table, Config),
+    {updated, _} = odbc:sql_query(Conn, CreateQ),
+    InsertQ = "INSERT INTO " ++ Table ++ "(field) VALUES (?)",
+    {updated, _} = odbc:param_query(Conn, InsertQ,
+        [{{sql_longvarchar, 128}, [null]}]),
+    Ret = odbc:sql_query(Conn, "SELECT field FROM " ++ Table),
+    ?assertRows([[null]], Ret),
+    odbc:sql_query(Conn, "DROP TABLE " ++ Table).
+
+param_query_longvarchar_long(Config) ->
+    %% Test with a string larger than typical varchar limits but within
+    %% longvarchar territory (> 8000 bytes).
+    Conn = ?config(conn, Config),
+    Table = "longvarchar_long_" ++ integer_to_list(erlang:unique_integer([positive])),
+    CreateQ = sql(create_text_table, Table, Config),
+    {updated, _} = odbc:sql_query(Conn, CreateQ),
+    InsertQ = "INSERT INTO " ++ Table ++ "(field) VALUES (?)",
+    LongStr = list_to_binary(lists:duplicate(10000, $X)),
+    {updated, _} = odbc:param_query(Conn, InsertQ,
+        [{{sql_longvarchar, 10000}, [LongStr]}]),
+    Ret = odbc:sql_query(Conn, "SELECT field FROM " ++ Table),
+    ?assertRows([[LongStr]], Ret),
+    odbc:sql_query(Conn, "DROP TABLE " ++ Table).
 
 param_query_multiple_result_sets(Config) ->
     %% param_query only returns the first result set regardless of DB,
@@ -470,6 +526,13 @@ sql(param_cast, Type, Config) ->
     case db(Config) of
         mssql    -> "select ?";
         postgres -> "select ?::" ++ Type
+    end;
+
+%% Create a table with a single text column
+sql(create_text_table, Table, Config) ->
+    case db(Config) of
+        mssql    -> "CREATE TABLE " ++ Table ++ " (field varchar(max))";
+        postgres -> "CREATE TABLE " ++ Table ++ " (field text)"
     end;
 
 %% Timestamp literal

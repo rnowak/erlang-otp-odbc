@@ -77,6 +77,7 @@
 -define(USER_TIMESTAMP, 14).
 -define(USER_WLONGVARCHAR, 15).
 -define(USER_LONGVARBINARY, 16).
+-define(USER_LONGVARCHAR, 17).
 
 %% INPUT & OUTPUT TYPE 
 -define(IN, 0).

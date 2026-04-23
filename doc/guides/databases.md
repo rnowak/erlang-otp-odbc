@@ -112,6 +112,7 @@ API.
 | SQL_REAL                                                                      | Float                                          |
 | SQL_DOUBLE                                                                    | Float                                          |
 | SQL_VARCHAR(size)                                                             | String \| Binary (configurable)                |
+| SQL_LONGVARCHAR(size)                                                         | String \| Binary (configurable)                |
 | SQL_WVARCHAR(size)                                                            | Unicode binary encoded as UTF16 little endian. |
 
 _Table: Mapping of ODBC data types to the Erlang data types returned to the

@@ -119,6 +119,7 @@ User's Guide.
                                  {sql_wvarchar, Size::integer()}|
                                  {sql_float, Precision::integer()} |
                                  {sql_wlongvarchar, Size::integer()} |
+                                 {sql_longvarchar, Size::integer()} |
                                  {sql_longvarbinary, Size::integer()} |
                                  sql_real | sql_double | sql_bit | atom().
 -doc """
@@ -1315,6 +1316,9 @@ fix_params({{sql_char, Max}, InOut, Values}) ->
 fix_params({{sql_varchar, Max}, InOut, Values}) ->
      NewValues = string_terminate(Values),
     {?USER_VARCHAR, Max, fix_inout(InOut), NewValues};
+fix_params({{sql_longvarchar, Max}, InOut, Values}) ->
+     NewValues = string_terminate(Values),
+    {?USER_LONGVARCHAR, Max, fix_inout(InOut), NewValues};
 fix_params({{sql_wchar, Max}, InOut, Values}) ->
     NewValues = string_terminate(Values),
     {?USER_WCHAR, Max, fix_inout(InOut), NewValues};

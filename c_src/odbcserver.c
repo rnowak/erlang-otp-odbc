@@ -93,7 +93,7 @@
    Datatype -  USER_INT | USER_SMALL_INT | {USER_DECIMAL, Precision, Scale} |
    {USER_NMERIC, Precision, Scale} | {USER_CHAR, Max} | {USER_VARCHAR, Max} |
    {USER_WVARCHAR, Max} | {USER_FLOAT, Precision} | USER_REAL | USER_DOUBLE |
-   USER_TIMESTAMP | {USER_WLONGVARCHAR, Max}
+   USER_TIMESTAMP | {USER_WLONGVARCHAR, Max} | {USER_LONGVARCHAR, Max}
    Scale - integer
    Precision - integer
    Max - integer
@@ -2413,8 +2413,11 @@ static void init_param_column(param_array *params, char *buffer, int *index,
         break;
     case USER_CHAR:
     case USER_VARCHAR:
+    case USER_LONGVARCHAR:
         if(user_type == USER_CHAR) {
              params->type.sql = SQL_CHAR;
+        } else if(user_type == USER_LONGVARCHAR) {
+             params->type.sql = SQL_LONGVARCHAR;
         } else {
              params->type.sql = SQL_VARCHAR;
         }

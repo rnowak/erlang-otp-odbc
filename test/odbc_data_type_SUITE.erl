@@ -48,6 +48,7 @@ all() ->
 	ok ->
 	    [{group, char},{group, fixed_char}, {group, binary_char},
 	     {group, fixed_binary_char}, {group, unicode},
+	     {group, longvarchar},
 	     {group, int}, {group, floats},
 	     {group, dec_and_num}, timestamp];
 	Other -> {skip, Other}
@@ -69,6 +70,9 @@ groups() ->
 			      binary_char_fixed_upper_limit,
 			      binary_char_fixed_padding]},
      {unicode, [], [utf8, nchar, nvarchar]},
+     {longvarchar, [],
+      [longvarchar_lower_limit, longvarchar_param_insert,
+       longvarchar_null_value]},
      {int, [],
       [tiny_int_lower_limit, tiny_int_upper_limit,
        small_int_lower_limit, small_int_upper_limit,
@@ -1454,6 +1458,66 @@ nvarchar(Config) when is_list(Config) ->
 			   "(FIELD nvarchar(50))"),
 
     w_char_support(Ref, Table, sql_wlongvarchar, 50).
+
+%%------------------------------------------------------------------------
+longvarchar_lower_limit() ->
+    [{doc,"Tests param_query with sql_longvarchar inserting a single short value."}].
+longvarchar_lower_limit(Config) when is_list(Config) ->
+    Ref = proplists:get_value(connection_ref, Config),
+    Table = proplists:get_value(tableName, Config),
+
+    {updated, _} =
+	odbc:sql_query(Ref, "CREATE TABLE " ++ Table ++
+		       ?RDBMS:create_text_table()),
+
+    {updated, _} =
+	odbc:param_query(Ref, "INSERT INTO " ++ Table ++ "(FIELD) values(?)",
+			 [{{sql_longvarchar, 50}, ["a"]}]),
+
+    {selected, Fields, [{"a"}]} =
+	odbc:sql_query(Ref, "SELECT FIELD FROM " ++ Table),
+    ["FIELD"] = odbc_test_lib:to_upper(Fields).
+
+%%------------------------------------------------------------------------
+longvarchar_param_insert() ->
+    [{doc,"Tests param_query with sql_longvarchar inserting multiple rows."}].
+longvarchar_param_insert(Config) when is_list(Config) ->
+    Ref = proplists:get_value(connection_ref, Config),
+    Table = proplists:get_value(tableName, Config),
+
+    {updated, _} =
+	odbc:sql_query(Ref, "CREATE TABLE " ++ Table ++
+		       ?RDBMS:create_text_table()),
+
+    Data = ["hello", "world", "foo bar"],
+
+    {updated, _} =
+	odbc:param_query(Ref, "INSERT INTO " ++ Table ++ "(FIELD) values(?)",
+			 [{{sql_longvarchar, 50}, Data}]),
+
+    {selected, _, Rows} =
+	odbc:sql_query(Ref, "SELECT FIELD FROM " ++ Table),
+
+    ResultStrings = [Val || {Val} <- Rows],
+    Data = ResultStrings.
+
+%%------------------------------------------------------------------------
+longvarchar_null_value() ->
+    [{doc,"Tests param_query with sql_longvarchar inserting a null value."}].
+longvarchar_null_value(Config) when is_list(Config) ->
+    Ref = proplists:get_value(connection_ref, Config),
+    Table = proplists:get_value(tableName, Config),
+
+    {updated, _} =
+	odbc:sql_query(Ref, "CREATE TABLE " ++ Table ++
+		       ?RDBMS:create_text_table()),
+
+    {updated, _} =
+	odbc:param_query(Ref, "INSERT INTO " ++ Table ++ "(FIELD) values(?)",
+			 [{{sql_longvarchar, 50}, [null]}]),
+
+    {selected, _, [{null}]} =
+	odbc:sql_query(Ref, "SELECT FIELD FROM " ++ Table).
 
 %%------------------------------------------------------------------------
 timestamp(suit) ->
