@@ -135,14 +135,18 @@
 #include "odbcserver.h"
 
 /* ---------------- Main functions ---------------------------------------*/
+#ifndef TEST_HARNESS
 static void spawn_sup(const char *port);
 #ifdef WIN32
 DWORD WINAPI database_handler(const char *port);
 #else
 void database_handler(const char *port);
 #endif
+#endif /* !TEST_HARNESS */
 static db_result_msg handle_db_request(byte *reqstring, db_state *state);
+#ifndef TEST_HARNESS
 static void supervise(const char *port);
+#endif
 /* ----------------- ODBC functions --------------------------------------*/
 
 static db_result_msg db_connect(byte *connStrIn, db_state *state);
@@ -185,6 +189,7 @@ static Boolean decode_params(db_state *state, char *buffer, int *index, param_ar
 
 /*------------- Erlang port communication functions ----------------------*/
 
+#ifndef TEST_HARNESS
 static int read_exact(byte *buf, int len);
 static byte * receive_erlang_port_msg(void);
 
@@ -209,6 +214,7 @@ static void close_socket(int socket);
 static void tcp_nodelay(int sock);
 #endif
 static void clean_socket_lib(void);
+#endif /* !TEST_HARNESS */
 
 /*------------- Memory handling functions --------------------------------*/
 
@@ -273,7 +279,20 @@ static void str_tolower(char *str, int len);
 
 /* ----------------------------- CODE ------------------------------------*/
 
-#if defined(WIN32)
+#ifdef TEST_HARNESS
+/* In test mode, DO_EXIT uses longjmp to allow tests to catch exits */
+#include <setjmp.h>
+extern jmp_buf test_exit_buf;
+extern int test_exit_code;
+extern int test_expect_exit;
+#  define DO_EXIT(code) do {                      \
+    if (test_expect_exit) {                       \
+        test_exit_code = (code);                  \
+        longjmp(test_exit_buf, 1);                \
+    }                                             \
+    _exit((code));                                \
+} while(0)
+#elif defined(WIN32)
 #  define DO_EXIT(code) do { ExitProcess((code)); _exit((code));} while (0)
 /* _exit() called only to avoid a warning */
 #else
@@ -281,6 +300,8 @@ static void str_tolower(char *str, int len);
 #endif
 
 /* ----------------- Main functions --------------------------------------*/
+
+#ifndef TEST_HARNESS
 
 int main(void)
 {
@@ -409,6 +430,8 @@ DWORD WINAPI database_handler(const char *port)
     return (DWORD)0;
 #endif
 }
+
+#endif /* !TEST_HARNESS */
  
 /* Description: Calls the appropriate function to handle the database
    request received from the erlang-process. Returns a message to send back
@@ -1933,6 +1956,8 @@ static Boolean decode_params(db_state *state, char *buffer, int *index, param_ar
 
 /*------------- Erlang port communication functions ----------------------*/
 
+#ifndef TEST_HARNESS
+
 /* read from stdin */ 
 #ifdef WIN32
 static int read_exact(byte *buffer, int len)
@@ -2221,6 +2246,8 @@ static void clean_socket_lib(void)
     WSACleanup();
 #endif
 }
+
+#endif /* !TEST_HARNESS */
     
 
 /*------------- Memory handling functions -------------------------------*/

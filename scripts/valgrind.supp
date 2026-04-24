@@ -1,0 +1,11 @@
+# Valgrind suppressions for Erlang ei library and ODBC driver internals.
+# Add patterns here for known false positives from third-party libraries.
+
+# Example: suppress uninitialized value warnings from ODBC driver manager
+#{
+#    odbc_driver_manager_uninit
+#    Memcheck:Param
+#    write(buf)
+#    ...
+#    obj:*/libodbc.so*
+#}

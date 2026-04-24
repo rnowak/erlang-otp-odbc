@@ -66,5 +66,28 @@ odbcserver.o: odbcserver.c odbcserver.h
 
 clean:
 	rm -f odbcserver.o $(TARGET)
+	rm -f test_decode_params $(BASEDIR)/test_decode_params
 
-.PHONY: all clean
+# ---- Test targets ----
+
+TEST_CFLAGS = $(ALL_CFLAGS) -DTEST
+TEST_LDFLAGS = -L$(EI_LIB_DIR) -lei $(ODBC_LIB) $(THR_LIBS) $(LDFLAGS)
+
+# Build and run C unit tests (no database needed)
+test: test_decode_params
+	./test_decode_params
+
+test_decode_params: test_decode_params.c odbcserver.c odbcserver.h test_harness.h
+	$(CC) $(TEST_CFLAGS) -o $@ test_decode_params.c $(TEST_LDFLAGS)
+
+# Build with AddressSanitizer + UndefinedBehaviorSanitizer
+sanitize: CFLAGS += -fsanitize=address,undefined -fno-omit-frame-pointer -g
+sanitize: LDFLAGS += -fsanitize=address,undefined
+sanitize: clean $(TARGET)
+
+# Run C unit tests under ASan/UBSan
+test-sanitize: CFLAGS += -fsanitize=address,undefined -fno-omit-frame-pointer -g
+test-sanitize: LDFLAGS += -fsanitize=address,undefined
+test-sanitize: test
+
+.PHONY: all clean test sanitize test-sanitize
