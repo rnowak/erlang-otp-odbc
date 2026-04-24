@@ -1829,22 +1829,41 @@ static Boolean decode_params(db_state *state, char *buffer, int *index, param_ar
     switch (param->type.c) {
     case SQL_C_CHAR:
             if (binary_strings(state)) {
+                    if (erl_type != ERL_BINARY_EXT || size > param->type.len) {
+                            return FALSE;
+                    }
                     ei_decode_binary(buffer, index,
                                      &(param->values.string[param->offset]), &bin_size);
                     param->offset += param->type.len;
             } else {
-                    if(erl_type != ERL_STRING_EXT) {
+                    if (erl_type == ERL_NIL_EXT) {
+                            /* Empty string [] is encoded as ERL_NIL_EXT */
+                            ei_decode_list_header(buffer, index, &size);
+                            param->values.string[param->offset] = '\0';
+                            param->offset += param->type.len;
+                    } else if (erl_type == ERL_STRING_EXT) {
+                            /* size from ei_get_type + null terminator from ei_decode_string */
+                            if (size + 1 > param->type.len) {
+                                    return FALSE;
+                            }
+                            ei_decode_string(buffer, index, (char*)&(param->values.string[param->offset]));
+                            param->offset += param->type.len;
+                    } else {
                             return FALSE;
                     }
-                    ei_decode_string(buffer, index, (char*)&(param->values.string[param->offset]));
-                    param->offset += param->type.len;
             }
             break;
     case SQL_C_WCHAR:
+            if (erl_type != ERL_BINARY_EXT || size > param->type.len) {
+                    return FALSE;
+            }
             ei_decode_binary(buffer, index, &(param->values.string[param->offset]), &bin_size);
             param->offset += param->type.len;
             break;
     case SQL_C_BINARY:
+            if (erl_type != ERL_BINARY_EXT || size > param->type.len) {
+                    return FALSE;
+            }
             ei_decode_binary(buffer, index, &(param->values.string[param->offset]), &bin_size);
             param->offset += param->type.len;
             break;

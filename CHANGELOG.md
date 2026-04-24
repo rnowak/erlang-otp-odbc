@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.18.0] - 2026-04-23
+## [2.18.0] - 2026-04-24
 
 ### Added
 
@@ -17,6 +17,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - End-to-end tests for `sql_longvarchar` param queries covering single value,
   multi-row insert, NULL handling, and large strings (>8000 bytes), verified
   against both PostgreSQL and MSSQL.
+
+### Fixed
+
+- Fix null terminator handling for parameterized string types, preventing
+  buffer overflows in `decode_params`. CHAR list values had a double null
+  terminator (Erlang and C both added one), and CHAR binary values received
+  a 2-byte wide null instead of a 1-byte null. WCHAR binary values were
+  already correct.
+- Add pre-decode bounds checks in `decode_params` using `ei_get_type()` to
+  validate data size before writing into the buffer, and verify term types
+  (`ERL_BINARY_EXT`, `ERL_STRING_EXT`) before decoding.
+- Handle empty strings (`ERL_NIL_EXT`) in the CHAR list decoding path, which
+  were previously rejected.
 
 ## [2.17.1] - 2026-04-09
 

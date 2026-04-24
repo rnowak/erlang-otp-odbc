@@ -80,6 +80,10 @@ See also http://msdn.microsoft.com/
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, 
 	 terminate/2, code_change/3]).
 
+-ifdef(TEST).
+-export([string_terminate/1, wstring_terminate/1]).
+-endif.
+
 -doc "Opaque reference to an ODBC connection as returnded by connect/2.".
 -opaque connection_reference() :: pid().
 -doc "Name of column in the result set.".
@@ -1320,13 +1324,13 @@ fix_params({{sql_longvarchar, Max}, InOut, Values}) ->
      NewValues = string_terminate(Values),
     {?USER_LONGVARCHAR, Max, fix_inout(InOut), NewValues};
 fix_params({{sql_wchar, Max}, InOut, Values}) ->
-    NewValues = string_terminate(Values),
+    NewValues = wstring_terminate(Values),
     {?USER_WCHAR, Max, fix_inout(InOut), NewValues};
 fix_params({{sql_wvarchar, Max}, InOut, Values}) ->
-    NewValues = string_terminate(Values),
+    NewValues = wstring_terminate(Values),
     {?USER_WVARCHAR, Max, fix_inout(InOut), NewValues};
 fix_params({{sql_wlongvarchar, Max}, InOut, Values}) ->
-    NewValues = string_terminate(Values),
+    NewValues = wstring_terminate(Values),
     {?USER_WLONGVARCHAR, Max, fix_inout(InOut), NewValues};
 fix_params({{sql_longvarbinary, Max}, InOut, Values}) ->
     {?USER_LONGVARBINARY, Max, fix_inout(InOut), Values};
@@ -1362,16 +1366,22 @@ fix_inout(inout) ->
     ?INOUT.
 
 string_terminate(Values) ->
-    case (catch lists:map(fun string_terminate_value/1, Values)) of
-	Result ->
-	    Result
-    end.
+    lists:map(fun string_terminate_value/1, Values).
 
 string_terminate_value(String) when is_list(String) ->
-    String ++ [?STR_TERMINATOR];
+    %% ei_decode_string on the C side adds the null terminator
+    String;
 string_terminate_value(Binary) when is_binary(Binary) ->
-    <<Binary/binary,0:16>>;
+    <<Binary/binary, 0:8>>;
 string_terminate_value(null) ->
+    null.
+
+wstring_terminate(Values) ->
+    lists:map(fun wstring_terminate_value/1, Values).
+
+wstring_terminate_value(Binary) when is_binary(Binary) ->
+    <<Binary/binary, 0:16>>;
+wstring_terminate_value(null) ->
     null.
 
 port_timeout() ->
