@@ -29,3 +29,22 @@ jobs:
         run: |
           make clean
           make test-sanitize
+
+  c-valgrind:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y unixodbc-dev erlang-dev valgrind
+
+      - name: Run C unit tests under Valgrind
+        working-directory: c_src
+        run: |
+          make clean
+          make test-valgrind

@@ -90,4 +90,12 @@ test-sanitize: CFLAGS += -fsanitize=address,undefined -fno-omit-frame-pointer -g
 test-sanitize: LDFLAGS += -fsanitize=address,undefined
 test-sanitize: test
 
-.PHONY: all clean test sanitize test-sanitize
+# Run C unit tests under Valgrind (Linux only)
+test-valgrind: CFLAGS += -g -O0
+test-valgrind: test_decode_params
+	valgrind --leak-check=full --show-reachable=yes --track-origins=yes \
+		--error-exitcode=42 --errors-for-leak-kinds=all \
+		$(if $(wildcard $(BASEDIR)/scripts/valgrind.supp),--suppressions=$(BASEDIR)/scripts/valgrind.supp) \
+		./test_decode_params
+
+.PHONY: all clean test sanitize test-sanitize test-valgrind
