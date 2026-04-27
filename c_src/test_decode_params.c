@@ -647,7 +647,7 @@ static int test_init_param_char_zero_size(void) {
     init_param_column(&param, buf.buff, &index, 1, &state);
 
     TEST_ASSERT_EQ_INT(1, param.type.len, "buffer len = 0+1 = 1");
-    TEST_ASSERT_EQ_INT(0, param.type.col_size, "col_size = 0");
+    TEST_ASSERT_EQ_INT(1, param.type.col_size, "col_size = max(0,1) = 1");
 
     free(param.values.string);
     free(param.type.strlen_or_indptr_array);
@@ -701,7 +701,7 @@ static int test_init_param_wlongvarchar_buffer_size(void) {
     TEST_ASSERT_EQ_INT(SQL_WLONGVARCHAR, param.type.sql, "SQL type");
     TEST_ASSERT_EQ_INT((int)sizeof(SQLWCHAR), param.type.len,
                         "buffer len = 1*sizeof(SQLWCHAR) for Size=0");
-    TEST_ASSERT_EQ_INT(0, param.type.col_size, "col_size = 0");
+    TEST_ASSERT_EQ_INT(1, param.type.col_size, "col_size = max(0,1) = 1");
 
     free(param.values.string);
     free(param.type.strlen_or_indptr_array);

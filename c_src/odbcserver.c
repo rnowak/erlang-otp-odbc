@@ -2468,10 +2468,12 @@ static void init_param_column(param_array *params, char *buffer, int *index,
              params->type.sql = SQL_VARCHAR;
         }
         ei_decode_long(buffer, index, &length);
+        if (length < 0) length = 0;
         /* Max string length + string terminator */
          params->type.len = length+1;
          params->type.c = SQL_C_CHAR;
-         params->type.col_size = (SQLUINTEGER)length;
+         /* col_size must be at least 1 — ODBC drivers reject 0 */
+         params->type.col_size = (SQLUINTEGER)(length > 0 ? length : 1);
          params->type.strlen_or_indptr_array
              = alloc_strlen_indptr(num_param_values, SQL_NTS);
          params->values.string =
@@ -2491,10 +2493,12 @@ static void init_param_column(param_array *params, char *buffer, int *index,
                 params->type.sql = SQL_WLONGVARCHAR; break;
         }
         ei_decode_long(buffer, index, &length);
+        if (length < 0) length = 0;
         /* Max string length + string terminator */
         params->type.len = (length+1)*sizeof(SQLWCHAR);
         params->type.c = SQL_C_WCHAR;
-        params->type.col_size = (SQLUINTEGER)length;
+        /* col_size must be at least 1 — ODBC drivers reject 0 */
+        params->type.col_size = (SQLUINTEGER)(length > 0 ? length : 1);
         params->type.strlen_or_indptr_array
             = alloc_strlen_indptr(num_param_values, SQL_NTS);
         params->values.string =
