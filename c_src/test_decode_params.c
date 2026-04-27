@@ -683,7 +683,7 @@ static int test_init_param_wchar_buffer_size(void) {
 }
 
 static int test_init_param_wlongvarchar_buffer_size(void) {
-    /* USER_WLONGVARCHAR with Max=0: buffer = 1*sizeof(SQLWCHAR) = 2 */
+    /* USER_WLONGVARCHAR with Max=5: buffer = 6*sizeof(SQLWCHAR) = 12 */
     db_state state = make_test_state(FALSE);
     param_array param;
     memset(&param, 0, sizeof(param));
@@ -691,7 +691,7 @@ static int test_init_param_wlongvarchar_buffer_size(void) {
     ei_x_buff buf;
     ei_x_new(&buf);
     ei_x_encode_long(&buf, USER_WLONGVARCHAR);
-    ei_x_encode_long(&buf, 0);
+    ei_x_encode_long(&buf, 5);
     ei_x_encode_long(&buf, ERL_ODBC_IN);
 
     int index = 0;
@@ -699,9 +699,9 @@ static int test_init_param_wlongvarchar_buffer_size(void) {
 
     TEST_ASSERT_EQ_INT(SQL_C_WCHAR, param.type.c, "C type");
     TEST_ASSERT_EQ_INT(SQL_WLONGVARCHAR, param.type.sql, "SQL type");
-    TEST_ASSERT_EQ_INT((int)sizeof(SQLWCHAR), param.type.len,
-                        "buffer len = 1*sizeof(SQLWCHAR) for Size=0");
-    TEST_ASSERT_EQ_INT(1, param.type.col_size, "col_size = max(0,1) = 1");
+    TEST_ASSERT_EQ_INT(6 * (int)sizeof(SQLWCHAR), param.type.len,
+                        "buffer len = (5+1)*sizeof(SQLWCHAR)");
+    TEST_ASSERT_EQ_INT(5, param.type.col_size, "col_size = 5");
 
     free(param.values.string);
     free(param.type.strlen_or_indptr_array);
@@ -728,6 +728,59 @@ static int test_init_param_longvarchar_buffer_size(void) {
     TEST_ASSERT_EQ_INT(SQL_LONGVARCHAR, param.type.sql, "SQL type");
     TEST_ASSERT_EQ_INT(101, param.type.len, "buffer len = Max+1");
     TEST_ASSERT_EQ_INT(100, param.type.col_size, "col_size = Max");
+
+    free(param.values.string);
+    free(param.type.strlen_or_indptr_array);
+    ei_x_free(&buf);
+    return 1;
+}
+
+static int test_init_param_longvarchar_zero_size(void) {
+    /* USER_LONGVARCHAR with Max=0: buffer = 1, col_size = 1 (clamped) */
+    db_state state = make_test_state(FALSE);
+    param_array param;
+    memset(&param, 0, sizeof(param));
+
+    ei_x_buff buf;
+    ei_x_new(&buf);
+    ei_x_encode_long(&buf, USER_LONGVARCHAR);
+    ei_x_encode_long(&buf, 0);
+    ei_x_encode_long(&buf, ERL_ODBC_IN);
+
+    int index = 0;
+    init_param_column(&param, buf.buff, &index, 1, &state);
+
+    TEST_ASSERT_EQ_INT(SQL_C_CHAR, param.type.c, "C type");
+    TEST_ASSERT_EQ_INT(SQL_LONGVARCHAR, param.type.sql, "SQL type");
+    TEST_ASSERT_EQ_INT(1, param.type.len, "buffer len = 0+1 = 1");
+    TEST_ASSERT_EQ_INT(1, param.type.col_size, "col_size clamped to 1");
+
+    free(param.values.string);
+    free(param.type.strlen_or_indptr_array);
+    ei_x_free(&buf);
+    return 1;
+}
+
+static int test_init_param_wlongvarchar_zero_size(void) {
+    /* USER_WLONGVARCHAR with Max=0: buffer = 2, col_size = 1 (clamped) */
+    db_state state = make_test_state(FALSE);
+    param_array param;
+    memset(&param, 0, sizeof(param));
+
+    ei_x_buff buf;
+    ei_x_new(&buf);
+    ei_x_encode_long(&buf, USER_WLONGVARCHAR);
+    ei_x_encode_long(&buf, 0);
+    ei_x_encode_long(&buf, ERL_ODBC_IN);
+
+    int index = 0;
+    init_param_column(&param, buf.buff, &index, 1, &state);
+
+    TEST_ASSERT_EQ_INT(SQL_C_WCHAR, param.type.c, "C type");
+    TEST_ASSERT_EQ_INT(SQL_WLONGVARCHAR, param.type.sql, "SQL type");
+    TEST_ASSERT_EQ_INT((int)sizeof(SQLWCHAR), param.type.len,
+                        "buffer len = 1*sizeof(SQLWCHAR)");
+    TEST_ASSERT_EQ_INT(1, param.type.col_size, "col_size clamped to 1");
 
     free(param.values.string);
     free(param.type.strlen_or_indptr_array);
@@ -817,6 +870,90 @@ static int test_init_then_decode_wchar_exact_fit(void) {
 }
 
 /* ====================================================================
+ * End-to-end: {sql_longvarchar, 0} with "" and {sql_wlongvarchar, 0}
+ * ==================================================================== */
+
+static int test_init_then_decode_longvarchar_zero_empty(void) {
+    /* Exact repro of: param_query(Ref, Q, [{{sql_longvarchar, 0}, [""]}]) */
+    db_state state = make_test_state(FALSE);
+    param_array param;
+    param_array *params = &param;
+    memset(&param, 0, sizeof(param));
+
+    ei_x_buff init_buf;
+    ei_x_new(&init_buf);
+    ei_x_encode_long(&init_buf, USER_LONGVARCHAR);
+    ei_x_encode_long(&init_buf, 0);
+    ei_x_encode_long(&init_buf, ERL_ODBC_IN);
+
+    int init_index = 0;
+    init_param_column(&param, init_buf.buff, &init_index, 1, &state);
+
+    TEST_ASSERT_EQ_INT(SQL_C_CHAR, param.type.c, "C type");
+    TEST_ASSERT_EQ_INT(SQL_LONGVARCHAR, param.type.sql, "SQL type");
+    TEST_ASSERT_EQ_INT(1, param.type.len, "buffer = 1");
+    TEST_ASSERT_EQ_INT(1, param.type.col_size, "col_size clamped to 1");
+
+    /* Decode empty string "" — encoded as ERL_NIL_EXT */
+    ei_x_buff val_buf;
+    ei_x_new(&val_buf);
+    ei_x_encode_empty_list(&val_buf);
+
+    int val_index = 0;
+    Boolean result = decode_params(&state, val_buf.buff, &val_index, &params, 0, 0, 1);
+
+    TEST_ASSERT_EQ_INT(TRUE, result, "decode empty string should succeed");
+    TEST_ASSERT_EQ_INT('\0', param.values.string[0], "null terminator at offset 0");
+
+    free(param.values.string);
+    free(param.type.strlen_or_indptr_array);
+    ei_x_free(&init_buf);
+    ei_x_free(&val_buf);
+    return 1;
+}
+
+static int test_init_then_decode_wlongvarchar_zero_empty(void) {
+    /* Exact repro of: param_query(Ref, Q, [{{sql_wlongvarchar, 0}, [<<>>]}]) */
+    db_state state = make_test_state(FALSE);
+    param_array param;
+    param_array *params = &param;
+    memset(&param, 0, sizeof(param));
+
+    ei_x_buff init_buf;
+    ei_x_new(&init_buf);
+    ei_x_encode_long(&init_buf, USER_WLONGVARCHAR);
+    ei_x_encode_long(&init_buf, 0);
+    ei_x_encode_long(&init_buf, ERL_ODBC_IN);
+
+    int init_index = 0;
+    init_param_column(&param, init_buf.buff, &init_index, 1, &state);
+
+    TEST_ASSERT_EQ_INT(SQL_C_WCHAR, param.type.c, "C type");
+    TEST_ASSERT_EQ_INT(SQL_WLONGVARCHAR, param.type.sql, "SQL type");
+    TEST_ASSERT_EQ_INT((int)sizeof(SQLWCHAR), param.type.len, "buffer = sizeof(SQLWCHAR)");
+    TEST_ASSERT_EQ_INT(1, param.type.col_size, "col_size clamped to 1");
+
+    /* Decode empty WCHAR binary: just the 2-byte null terminator (from wstring_terminate) */
+    byte wchar_null[] = {0x00, 0x00};
+    ei_x_buff val_buf;
+    ei_x_new(&val_buf);
+    ei_x_encode_binary(&val_buf, wchar_null, sizeof(SQLWCHAR));
+
+    int val_index = 0;
+    Boolean result = decode_params(&state, val_buf.buff, &val_index, &params, 0, 0, 1);
+
+    TEST_ASSERT_EQ_INT(TRUE, result, "decode empty wchar should succeed");
+    TEST_ASSERT_EQ_INT(0, param.values.string[0], "null byte 1");
+    TEST_ASSERT_EQ_INT(0, param.values.string[1], "null byte 2");
+
+    free(param.values.string);
+    free(param.type.strlen_or_indptr_array);
+    ei_x_free(&init_buf);
+    ei_x_free(&val_buf);
+    return 1;
+}
+
+/* ====================================================================
  * Main
  * ==================================================================== */
 
@@ -859,10 +996,14 @@ int main(void) {
     RUN_TEST(test_init_param_wchar_buffer_size);
     RUN_TEST(test_init_param_wlongvarchar_buffer_size);
     RUN_TEST(test_init_param_longvarchar_buffer_size);
+    RUN_TEST(test_init_param_longvarchar_zero_size);
+    RUN_TEST(test_init_param_wlongvarchar_zero_size);
 
     printf("\nEnd-to-end: init + decode:\n");
     RUN_TEST(test_init_then_decode_char_exact_fit);
     RUN_TEST(test_init_then_decode_wchar_exact_fit);
+    RUN_TEST(test_init_then_decode_longvarchar_zero_empty);
+    RUN_TEST(test_init_then_decode_wlongvarchar_zero_empty);
 
     TEST_SUMMARY();
 }
