@@ -41,7 +41,10 @@
     param_query_longvarchar_null/1,
     param_query_longvarchar_long/1,
     param_query_binary/1,
-    param_query_multiple_result_sets/1
+    param_query_multiple_result_sets/1,
+    param_query_longvarchar_empty/1,
+    param_query_longvarchar_zero_size_empty/1,
+    param_query_varchar_zero_size_empty/1
 ]).
 
 %% MSSQL-specific test cases
@@ -112,7 +115,10 @@ shared_cases() ->
         param_query_longvarchar_null,
         param_query_longvarchar_long,
         param_query_binary,
-        param_query_multiple_result_sets
+        param_query_multiple_result_sets,
+        param_query_longvarchar_empty,
+        param_query_longvarchar_zero_size_empty,
+        param_query_varchar_zero_size_empty
     ].
 
 groups() ->
@@ -339,6 +345,46 @@ param_query_longvarchar_long(Config) ->
         [{{sql_longvarchar, 10000}, [LongStr]}]),
     Ret = odbc:sql_query(Conn, "SELECT field FROM " ++ Table),
     ?assertRows([[LongStr]], Ret),
+    odbc:sql_query(Conn, "DROP TABLE " ++ Table).
+
+param_query_longvarchar_empty(Config) ->
+    %% Insert an empty string via longvarchar with a non-zero Max.
+    Conn = ?config(conn, Config),
+    Table = "longvarchar_empty_" ++ integer_to_list(erlang:unique_integer([positive])),
+    CreateQ = sql(create_text_table, Table, Config),
+    {updated, _} = odbc:sql_query(Conn, CreateQ),
+    InsertQ = "INSERT INTO " ++ Table ++ "(field) VALUES (?)",
+    {updated, _} = odbc:param_query(Conn, InsertQ,
+        [{{sql_longvarchar, 128}, [<<>>]}]),
+    Ret = odbc:sql_query(Conn, "SELECT field FROM " ++ Table),
+    ?assertRows([[<<>>]], Ret),
+    odbc:sql_query(Conn, "DROP TABLE " ++ Table).
+
+param_query_longvarchar_zero_size_empty(Config) ->
+    %% Regression: {sql_longvarchar, 0} with empty string previously caused
+    %% connection_closed because col_size=0 was rejected by SQLBindParameter.
+    Conn = ?config(conn, Config),
+    Table = "longvarchar_zero_" ++ integer_to_list(erlang:unique_integer([positive])),
+    CreateQ = sql(create_text_table, Table, Config),
+    {updated, _} = odbc:sql_query(Conn, CreateQ),
+    InsertQ = "INSERT INTO " ++ Table ++ "(field) VALUES (?)",
+    {updated, _} = odbc:param_query(Conn, InsertQ,
+        [{{sql_longvarchar, 0}, [<<>>]}]),
+    Ret = odbc:sql_query(Conn, "SELECT field FROM " ++ Table),
+    ?assertRows([[<<>>]], Ret),
+    odbc:sql_query(Conn, "DROP TABLE " ++ Table).
+
+param_query_varchar_zero_size_empty(Config) ->
+    %% Same regression test for sql_varchar with Size=0.
+    Conn = ?config(conn, Config),
+    Table = "varchar_zero_" ++ integer_to_list(erlang:unique_integer([positive])),
+    CreateQ = sql(create_text_table, Table, Config),
+    {updated, _} = odbc:sql_query(Conn, CreateQ),
+    InsertQ = "INSERT INTO " ++ Table ++ "(field) VALUES (?)",
+    {updated, _} = odbc:param_query(Conn, InsertQ,
+        [{{sql_varchar, 0}, [<<>>]}]),
+    Ret = odbc:sql_query(Conn, "SELECT field FROM " ++ Table),
+    ?assertRows([[<<>>]], Ret),
     odbc:sql_query(Conn, "DROP TABLE " ++ Table).
 
 param_query_multiple_result_sets(Config) ->
