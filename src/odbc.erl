@@ -1381,6 +1381,8 @@ wstring_terminate(Values) ->
 
 wstring_terminate_value(Binary) when is_binary(Binary) ->
     <<Binary/binary, 0:16>>;
+wstring_terminate_value(String) when is_list(String) ->
+    erlang:error({badarg, wchar_type_requires_binary});
 wstring_terminate_value(null) ->
     null.
 

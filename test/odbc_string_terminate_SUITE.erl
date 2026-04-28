@@ -90,9 +90,8 @@ wstring_terminate_null_value(_Config) ->
     ?assertEqual([null], Result).
 
 wstring_terminate_rejects_list(_Config) ->
-    %% WCHAR types should not accept list (string) values.
-    %% wstring_terminate_value has no clause for lists, so this should crash.
-    ?assertError(function_clause, odbc:wstring_terminate(["hello"])).
+    %% WCHAR types require binary values (UTF-16 encoded), not lists.
+    ?assertError({badarg, wchar_type_requires_binary}, odbc:wstring_terminate(["hello"])).
 
 %%--------------------------------------------------------------------
 %% Integration-style tests
